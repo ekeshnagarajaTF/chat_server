@@ -21,10 +21,39 @@ export function StartTaskButtonBasic({
   const [isProcessing, setIsProcessing] = useState(false);
   const { sendMessage } = useWebSocket();
 
+  // New implementation - Direct message to @zenovo_bot
+  const handleStartTask = async () => {
+    if (!isChannelActive) return;
+    
+    setIsProcessing(true);
+    try {
+      // Send the message directly to @zenovo_bot with proper content and sender info
+      const messageContent = '@zenovo_bot start the task';
+      if (messageContent && typeof messageContent === 'string') {
+        // Send message with proper content and sender info
+        const message = {
+          content: messageContent,
+          senderName: 'Admin',
+          senderId: 'admin',
+          senderType: 'admin'
+        };
+        sendMessage(messageContent);
+      } else {
+        console.error('Invalid message content');
+        alert('Error: Invalid message content');
+      }
+    } catch (error) {
+      console.error('Error starting task:', error);
+      alert('Error starting task. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  /* Original implementation - File upload workflow
   const handleUploadComplete = async (records: any[]) => {
     setIsProcessing(true);
     try {
-
       console.log('upload completed handling the same.....')
       console.log(window.location.origin)
       const messageContent = {
@@ -51,17 +80,20 @@ export function StartTaskButtonBasic({
       setIsProcessing(false);
     }
   };
+  */
 
   return (
     <>
       <Button
-        onClick={() => setIsUploadModalOpen(true)}
+        // onClick={() => setIsUploadModalOpen(true)}
+        onClick={handleStartTask}
         className={className}
         disabled={isProcessing || !isChannelActive}
       >
         {isProcessing ? 'Processing...' : !isChannelActive ? 'Channel Inactive' : buttonText}
       </Button>
 
+      {/* Original FileUploadModal implementation
       <FileUploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
@@ -72,6 +104,7 @@ export function StartTaskButtonBasic({
         allowedTypes={['application/pdf']}
         multiple={false}
       />
+      */}
     </>
   );
 } 

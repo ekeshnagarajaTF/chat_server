@@ -461,6 +461,7 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Tools section disabled
             <div className="bg-white shadow-sm rounded-md p-3 mt-3">
               <h2 className="text-md text-gray-700 mb-2 font-bold">Tools</h2>
               <div className="space-y-1.5 mb-2">
@@ -504,6 +505,7 @@ export default function Home() {
                 </a>
               </div>
             </div>
+            */}
           </div>
 
           {/* Center Area - Chat View */}
