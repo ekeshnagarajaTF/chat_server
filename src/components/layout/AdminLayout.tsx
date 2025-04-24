@@ -28,27 +28,9 @@ const menuItems: MenuItem[] = [
     children: []
   },
   {
-    name: 'Service Manager',
-    icon: CommandLineIcon,
-    path: '/servicemanager',
-    children: []
-  },
-  {
-    name: 'Tasks',
-    icon: ClipboardDocumentListIcon,
-    path: '/tasks',
-    children: []
-  },
-  {
     name: 'File Browser',
     icon: FolderIcon,
     path: '/filebrowser',
-    children: []
-  },
-  {
-    name: 'Settings',
-    icon: Cog6ToothIcon,
-    path: '/settings',
     children: []
   }
 ];

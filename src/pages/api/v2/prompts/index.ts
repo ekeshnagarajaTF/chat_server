@@ -10,18 +10,11 @@ let currentSettings: { [x:string]: any } | null = null;
 interface PromptFile {
     name: string;
     path: string;
-    type: 'system' | 'instruction' | 'custom';
-}
-
-interface Action {
-    name: string;
-    prompts: PromptFile[];
 }
 
 interface Folder {
     folder: string;
-    actions: Action[];
-    actionsOrder: string[];
+    prompts: PromptFile[];
 }
 
 // Ensure the base directory exists
@@ -49,12 +42,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         const isUseEnvSettings = process.env.USE_ENV_SETTINGS === 'true';
 
-        currentSettings = {
-            prompts_base_dir: isUseEnvSettings ? process.env.PROMPTS_DIR_PATH : (await settingsCache.getSettings()).prompts_base_dir,
-            static_file_base_url: isUseEnvSettings ? process.env.STATIC_FILE_BASE_URL : (await settingsCache.getSettings()).static_file_base_url
+        // Fix for the case where PROMPTS_DIR_PATH might have an extra equals sign
+        let promptsDirPath = process.env.PROMPTS_DIR_PATH;
+        if (promptsDirPath && promptsDirPath.startsWith('=')) {
+            promptsDirPath = promptsDirPath.substring(1);
         }
 
-        fileManager = new FileAccessManager(currentSettings.prompts_base_dir, currentSettings.static_file_base_url);
+        console.log('PROMPTS_DIR_PATH from env:', process.env.PROMPTS_DIR_PATH);
+        console.log('Fixed promptsDirPath:', promptsDirPath);
+
+        currentSettings = {
+            prompts_base_dir: promptsDirPath || 'D:\\ThoughtfocusRD\\zenovo_demo2\\prompts',
+            static_file_base_url: process.env.STATIC_FILE_BASE_URL || (await settingsCache.getSettings()).static_file_base_url
+        }
+
+        console.log('Using prompts_base_dir:', currentSettings.prompts_base_dir);
+
+        fileManager = new FileAccessManager(currentSettings.prompts_base_dir);
 
         // After this point, we know these are non-null
         const settings = currentSettings!;
@@ -64,8 +68,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             case 'GET':
                 if (req.query.folder && req.query.filename) {
                     // Get specific file content
-                    const action = req.query.action as string || 'default';
-                    const filePath = path.join(settings.prompts_base_dir, req.query.folder as string, action, req.query.filename as string);
+                    const filePath = path.join(settings.prompts_base_dir, req.query.folder as string, req.query.filename as string);
                     if (!manager.fileExists(filePath)) {
                         return res.status(404).json({ error: 'File not found' });
                     }
@@ -80,91 +83,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                         fs.mkdirSync(folderPath, { recursive: true });
                     }
 
-                    // Get all subdirectories (actions)
-                    const items = fs.readdirSync(folderPath, { withFileTypes: true });
-                    const actionDirs = items.filter(item => item.isDirectory()).map(dir => dir.name);
+                    // Get all YML files in the folder
+                    const files = manager.getFilenames(folderPath) || [];
+                    const ymlFiles = files.filter(file => file.endsWith('.yml') || file.endsWith('.yaml'));
                     
-                    // If no actions exist, create default action directory
-                    if (actionDirs.length === 0) {
-                        const defaultActionPath = path.join(folderPath, 'default');
-                        fs.mkdirSync(defaultActionPath, { recursive: true });
-                        actionDirs.push('default');
-                    }
-
-                    const actions: Action[] = [];
-                    
-                    // Process each action directory
-                    for (const actionName of actionDirs) {
-                        const actionPath = path.join(folderPath, actionName);
-                        const files = manager.getFilenames(actionPath) || [];
-                        
-                        const prompts: PromptFile[] = files.map(file => {
-                            const isSystem = file === 'system_prompt.md';
-                            const isInstruction = file === 'instructions.md';
-                            return {
-                                name: file,
-                                path: path.join(actionName, file),
-                                type: isSystem ? 'system' : isInstruction ? 'instruction' : 'custom'
-                            };
-                        });
-
-                        // Ensure default prompts exist for each action
-                        const hasSystemPrompt = files.includes('system_prompt.md');
-                        const hasInstructionPrompt = files.includes('instructions.md');
-                        
-                        if (!hasSystemPrompt) {
-                            prompts.push({
-                                name: 'system_prompt.md',
-                                path: path.join(actionName, 'system_prompt.md'),
-                                type: 'system'
-                            });
-                        }
-                        
-                        if (!hasInstructionPrompt) {
-                            prompts.push({
-                                name: 'instructions.md',
-                                path: path.join(actionName, 'instructions.md'),
-                                type: 'instruction'
-                            });
-                        }
-
-                        actions.push({
-                            name: actionName,
-                            prompts
-                        });
-                    }
+                    const prompts = ymlFiles.map(file => ({
+                        name: file,
+                        path: file
+                    }));
 
                     return res.status(200).json({ 
                         folder: req.query.folder as string,
-                        actions
+                        prompts
                     });
                 } else {
                     // List all folders and their contents
                     const folders = await manager.listFolders();
+                    console.log('Found folders:', folders);
                     const result: Folder[] = [];
 
                     for (const folder of folders) {
-                        const actions = await manager.listActions(folder);
-                        const actionsOrder = await manager.getActionsOrder(folder);
+                        const folderPath = path.join(settings.prompts_base_dir, folder);
+                        console.log('Processing folder:', folder, 'at path:', folderPath);
+                        const files = manager.getFilenames(folderPath) || [];
+                        console.log('Found files in folder:', folder, ':', files);
+                        const ymlFiles = files.filter(file => file.endsWith('.yml') || file.endsWith('.yaml'));
+                        console.log('Found YML files in folder:', folder, ':', ymlFiles);
                         
-                        const actionPrompts: Action[] = [];
-                        for (const action of actions) {
-                            const prompts = await manager.listPrompts(folder, action);
-                            actionPrompts.push({
-                                name: action,
-                                prompts: prompts.map(prompt => ({
-                                    name: prompt,
-                                    path: `${folder}/${action}/${prompt}`,
-                                    type: prompt.startsWith('system_') ? 'system' : 
-                                          prompt.startsWith('instruction_') ? 'instruction' : 'custom'
-                                }))
-                            });
-                        }
+                        const prompts = ymlFiles.map(file => ({
+                            name: file,
+                            path: `${folder}/${file}`
+                        }));
 
                         result.push({
                             folder,
-                            actions: actionPrompts,
-                            actionsOrder: actionsOrder || actions // Use existing order or default to alphabetical
+                            prompts
                         });
                     }
 
@@ -173,24 +126,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
             case 'POST':
                 try {
-                    const { folder, filename, content, action, actionsOrder } = req.body;
-                    const fileAccessManager = new FileAccessManager(settings.prompts_base_dir, settings.static_file_base_url);
+                    const { folder, filename, content } = req.body;
+                    const fileAccessManager = new FileAccessManager(settings.prompts_base_dir);
 
-                    if (actionsOrder) {
-                        // Handle action order update
-                        await fileAccessManager.saveActionsOrder(folder, actionsOrder);
-                        res.status(200).json({ success: true });
-                    } else {
-                        // Handle file content update
-                        if (!folder || !filename) {
-                            return res.status(400).json({ error: 'Folder and filename are required' });
-                        }
-
-                        const actionDir = action || 'default';
-                        const filePath = `${settings.prompts_base_dir}/${folder}/${actionDir}/${filename}`;
-                        await fileAccessManager.writeFile(filePath, content);
-                        res.status(200).json({ success: true });
+                    // Handle file content update
+                    if (!folder || !filename) {
+                        return res.status(400).json({ error: 'Folder and filename are required' });
                     }
+
+                    const filePath = `${settings.prompts_base_dir}/${folder}/${filename}`;
+                    await fileAccessManager.writeFile(filePath, content);
+                    res.status(200).json({ success: true });
                 } catch (error) {
                     console.error('Error in prompts API:', error);
                     res.status(500).json({ error: 'Internal server error' });
@@ -201,8 +147,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 if (!req.query.folder || !req.query.filename) {
                     return res.status(400).json({ error: 'Folder and filename are required' });
                 }
-                const deleteAction = req.query.action as string || 'default';
-                const deletePath = path.join(settings.prompts_base_dir, req.query.folder as string, deleteAction, req.query.filename as string);
+                const deletePath = path.join(settings.prompts_base_dir, req.query.folder as string, req.query.filename as string);
                 if (!manager.fileExists(deletePath)) {
                     return res.status(404).json({ error: 'File not found' });
                 }

@@ -228,6 +228,22 @@ const FileBrowser = () => {
     );
   };
 
+  const handleDeleteSelected = async () => {
+    if (fileListRef.current && fileListRef.current.onGetChecked) {
+      const checkedItems = fileListRef.current.onGetChecked();
+      if (checkedItems.length === 0) return;
+
+      const confirmDelete = window.confirm(
+        `Are you sure you want to delete ${checkedItems.length} selected item(s)?`
+      );
+      if (!confirmDelete) return;
+
+      const paths = checkedItems.map((item: FileItem) => item.path);
+      await handleDelete("", paths);
+      setCheckedCount(0);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       const data = await fetchDirectory();
@@ -273,16 +289,11 @@ const FileBrowser = () => {
                   Select All
                 </button>
                 <button
-                  onClick={() => {
-                    if (fileListRef.current && fileListRef.current.onGetChecked) {
-                      const checkedItems = fileListRef.current.onGetChecked().map((item: any) => item.path);
-                      handleDelete("", checkedItems);
-                    }
-                  }}
+                  onClick={handleDeleteSelected}
                   disabled={checkedCount === 0}
-                  className={`ml-4 text-blue-600 hover:text-blue-800 font-medium ${checkedCount === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`ml-4 text-red-600 hover:text-red-800 font-medium ${checkedCount === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  Delete Selected
+                  Delete Selected ({checkedCount})
                 </button>
                 {currentPath && (
                   <>

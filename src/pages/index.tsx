@@ -461,7 +461,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Tools section disabled
+           
             <div className="bg-white shadow-sm rounded-md p-3 mt-3">
               <h2 className="text-md text-gray-700 mb-2 font-bold">Tools</h2>
               <div className="space-y-1.5 mb-2">
@@ -474,6 +474,17 @@ export default function Home() {
                   File Browser
                 </a>
               </div>
+              <div className="space-y-1.5 mb-2">
+                <a
+                  href="/promptsmanager"
+                  className="block text-sm text-indigo-700 hover:underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Prompts Manager
+                </a>
+              </div>
+               {/* Tools section disabled
               <div className="space-y-1.5 mb-2">
                 <a
                   href="/servicemanager"
@@ -503,9 +514,8 @@ export default function Home() {
                 >
                   Settings
                 </a>
-              </div>
+              </div>*/}
             </div>
-            */}
           </div>
 
           {/* Center Area - Chat View */}

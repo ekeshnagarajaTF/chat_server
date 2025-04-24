@@ -20,22 +20,18 @@ const mdParser = new MarkdownIt({
 interface PromptFile {
   name: string;
   path: string;
-  type: 'system' | 'instruction' | 'custom';
+  prompt_scripts?: string[];
 }
 
 interface Action {
   name: string;
   prompts: PromptFile[];
-  activeSystemPrompt?: string;
-  activeInstructionPrompt?: string;
-  requires_browser?: boolean;
-  disable_browser_config?: boolean;
   prompt_scripts?: string[];
 }
 
 interface Folder {
   folder: string;
-  actions: Action[];
+  prompts: PromptFile[];
 }
 
 interface ConfirmModalProps {
@@ -49,22 +45,22 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({ isOpen, message, onConfirm,
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-        <h3 className="text-lg font-semibold mb-4">Confirm Action</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Confirm Action</h3>
         <p className="text-gray-600 mb-6">{message}</p>
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end space-x-3">
           <button
             onClick={onCancel}
-            className="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="px-3 py-1.5 text-sm text-white bg-gray-700 rounded hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
           >
-            Continue
+            Confirm
           </button>
         </div>
       </div>
@@ -94,58 +90,46 @@ const PromptsManager: React.FC = () => {
   const md = new MarkdownIt();
 
   const fetchFolders = async () => {
-    return withLoading(async () => {
-      const response = await fetch(`/api/v2/prompts?nocachecode=${uuidv4()}`);
-      if (!response.ok) throw new Error('Failed to fetch folders');
+    await withLoading(async () => {
+      const response = await fetch('/api/v2/prompts');
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to fetch folders' }));
+        throw new Error(error.message || 'Failed to fetch folders');
+      }
       const data = await response.json();
       setFolders(data.folders);
 
       // If we have folders but no selected folder, select the first one
       if (data.folders.length > 0 && !selectedFolder) {
         const firstFolder = data.folders[0].folder;
-        const firstAction = data.folders[0].actions[0]?.name || 'default';
         setSelectedFolder(firstFolder);
-        setSelectedAction(firstAction);
-        // Fetch active prompts for initial folder/action
-        await fetchFolderState(firstFolder, firstAction);
+        // Fetch active prompts for initial folder
+        await fetchFolderState(firstFolder);
       }
     }, { startLoading, stopLoading });
   };
 
   // Single function to fetch folder state (folders list + active prompts)
-  const fetchFolderState = async (folder: string, action: string) => {
+  const fetchFolderState = async (folder: string) => {
     try {
       startLoading();
-      const [foldersResponse, activeResponse] = await Promise.all([
-        fetch(`/api/v2/prompts?nocachecode=${uuidv4()}`),
-        fetch(`/api/v2/prompts/config?nocachecode=${uuidv4()}&folder=${folder}&action=${action}`)
-      ]);
+      const foldersResponse = await fetch('/api/v2/prompts');
 
-      if (!foldersResponse.ok) throw new Error('Failed to fetch folders');
-      if (!activeResponse.ok) throw new Error('Failed to fetch active prompts');
+      if (!foldersResponse.ok) {
+        const error = await foldersResponse.json().catch(() => ({ message: 'Failed to fetch folders' }));
+        throw new Error(error.message || 'Failed to fetch folders');
+      }
 
-      const [foldersData, activeData] = await Promise.all([
-        foldersResponse.json(),
-        activeResponse.json()
-      ]);
+      const foldersData = await foldersResponse.json();
 
       const updatedFolders = foldersData.folders.map((f: Folder) => {
         if (f.folder === folder) {
           return {
             ...f,
-            actions: f.actions.map(a => {
-              if (a.name === action) {
-                return {
-                  ...a,
-                  activeSystemPrompt: activeData.activeSystemPrompt,
-                  activeInstructionPrompt: activeData.activeInstructionPrompt,
-                  requires_browser: activeData.requires_browser,
-                  disable_browser_config: activeData.disable_browser_config,
-                  prompt_scripts: activeData.prompt_scripts
-                };
-              }
-              return a;
-            })
+            prompts: f.prompts.map(p => ({
+              ...p,
+              prompt_scripts: [] // Default empty array for prompt scripts
+            }))
           };
         }
         return f;
@@ -162,13 +146,16 @@ const PromptsManager: React.FC = () => {
 
   const fetchScripts = async () => {
     try {
-      const response = await fetch(`/api/v2/prompts/scripts?nocachecode=${uuidv4()}`);
-      if (!response.ok) throw new Error('Failed to fetch scripts');
+      const response = await fetch('/api/v2/prompts/scripts');
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to fetch scripts' }));
+        throw new Error(error.message || 'Failed to fetch scripts');
+      }
       const data = await response.json();
       setScripts(data.scripts);
     } catch (error) {
       console.error('Error fetching scripts:', error);
-      toast.error('Failed to fetch scripts');
+      toast.error(error instanceof Error ? error.message : 'Failed to fetch scripts');
     }
   };
 
@@ -186,9 +173,9 @@ const PromptsManager: React.FC = () => {
         setOriginalContent('');
         setIsCreatingNew(false);
 
-        const firstAction = folders.find(f => f.folder === folder)?.actions[0]?.name || 'default';
+        const firstAction = folders.find(f => f.folder === folder)?.prompts[0]?.name || 'default';
         setSelectedAction(firstAction);
-        fetchFolderState(folder, firstAction);
+        fetchFolderState(folder);
       });
       setConfirmModal(true);
       return;
@@ -200,9 +187,9 @@ const PromptsManager: React.FC = () => {
     setOriginalContent('');
     setIsCreatingNew(false);
 
-    const firstAction = folders.find(f => f.folder === folder)?.actions[0]?.name || 'default';
+    const firstAction = folders.find(f => f.folder === folder)?.prompts[0]?.name || 'default';
     setSelectedAction(firstAction);
-    fetchFolderState(folder, firstAction);
+    fetchFolderState(folder);
   };
 
   const handleActionSelect = (action: string) => {
@@ -214,7 +201,7 @@ const PromptsManager: React.FC = () => {
           setContent('');
           setOriginalContent('');
           setIsCreatingNew(false);
-          fetchFolderState(selectedFolder, action);
+          fetchFolderState(selectedFolder);
         }
       });
       setConfirmModal(true);
@@ -227,82 +214,67 @@ const PromptsManager: React.FC = () => {
       setContent('');
       setOriginalContent('');
       setIsCreatingNew(false);
-      fetchFolderState(selectedFolder, action);
+      fetchFolderState(selectedFolder);
     }
   };
 
   const handlePromptSelect = async (prompt: PromptFile) => {
-    // If there are unsaved changes, set up the pending action and show confirm
-    if (content !== originalContent) {
-      setPendingAction(() => async () => {
-        try {
-          startLoading();
-          const response = await fetch(`/api/v2/prompts?folder=${selectedFolder}&filename=${prompt.name}&action=${selectedAction}`);
-          if (!response.ok) throw new Error('Failed to fetch prompt content');
-          const data = await response.json();
-          setSelectedPrompt(prompt);
-          setContent(data.content);
-          setOriginalContent(data.content);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to fetch prompt content');
-        } finally {
-          stopLoading();
-        }
-      });
-      setConfirmModal(true);
-      return;
-    }
-
-    // If no unsaved changes, proceed directly
     try {
       startLoading();
-      const response = await fetch(`/api/v2/prompts?folder=${selectedFolder}&filename=${prompt.name}&action=${selectedAction}`);
-      if (!response.ok) throw new Error('Failed to fetch prompt content');
-      const data = await response.json();
-      setSelectedPrompt(prompt);
+      const promptResponse = await fetch(`/api/v2/prompts?folder=${selectedFolder}&filename=${prompt.name}`);
+      if (!promptResponse.ok) {
+        const error = await promptResponse.json().catch(() => ({ message: 'Failed to fetch prompt content' }));
+        throw new Error(error.message || 'Failed to fetch prompt content');
+      }
+      const data = await promptResponse.json();
       setContent(data.content);
       setOriginalContent(data.content);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch prompt content');
+      setSelectedPrompt(prompt);
+    } catch (error) {
+      console.error('Error fetching prompt content:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to load prompt content');
     } finally {
       stopLoading();
     }
   };
 
   const handleSave = async () => {
-    if (!selectedFolder || !selectedPrompt) return;
+    if (!selectedFolder || !selectedPrompt) {
+      toast.error('No prompt selected');
+      return;
+    }
 
     try {
       startLoading();
-      const response = await fetch(`/api/v2/prompts?nocachecode=${uuidv4()}`, {
+      const response = await fetch('/api/v2/prompts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           folder: selectedFolder,
           filename: selectedPrompt.name,
           content,
-          action: selectedAction
-        })
+        }),
       });
 
-      if (!response.ok) throw new Error('Failed to save prompt');
-      setOriginalContent(content);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to save prompt' }));
+        throw new Error(error.message || 'Failed to save prompt');
+      }
       toast.success('Prompt saved successfully');
-    } catch (err) {
-      console.error('Error saving prompt:', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to save prompt');
+      setOriginalContent(content);
+    } catch (error) {
+      console.error('Error saving prompt:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to save prompt');
     } finally {
       stopLoading();
     }
   };
 
   const handleNewPrompt = () => {
-    if (!selectedFolder) {
-      setError('Please select a folder first');
-      return;
-    }
-    setIsCreatingNew(true);
     setNewPromptName('');
+    setIsCreatingNew(true);
   };
 
   const handleNewAction = () => {
@@ -315,35 +287,36 @@ const PromptsManager: React.FC = () => {
   };
 
   const handleCreatePrompt = async () => {
-    if (!newPromptName) {
-      toast.error('Please enter a prompt name');
+    if (!selectedFolder || !newPromptName) {
+      toast.error('Please select a folder and enter a prompt name');
       return;
     }
 
-    const sanitizedName = newPromptName.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase();
-    const filename = sanitizedName.endsWith('.md') ? sanitizedName : `${sanitizedName}.md`;
-
     try {
       startLoading();
-      const response = await fetch(`/api/v2/prompts?nocachecode=${uuidv4()}`, {
+      const response = await fetch('/api/v2/prompts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           folder: selectedFolder,
-          filename,
+          filename: newPromptName,
           content: '',
-          action: selectedAction
-        })
+        }),
       });
 
-      if (!response.ok) throw new Error('Failed to create prompt');
-      await fetchFolderState(selectedFolder, selectedAction);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to create prompt' }));
+        throw new Error(error.message || 'Failed to create prompt');
+      }
+      await fetchFolderState(selectedFolder);
       setIsCreatingNew(false);
       setNewPromptName('');
       toast.success('Prompt created successfully');
-    } catch (err) {
-      console.error('Error creating prompt:', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to create prompt');
+    } catch (error) {
+      console.error('Error creating prompt:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to create prompt');
     } finally {
       stopLoading();
     }
@@ -359,7 +332,7 @@ const PromptsManager: React.FC = () => {
 
     try {
       startLoading();
-      const response = await fetch(`/api/v2/prompts?nocachecode=${uuidv4()}`, {
+      const response = await fetch('/api/v2/prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -370,8 +343,11 @@ const PromptsManager: React.FC = () => {
         })
       });
 
-      if (!response.ok) throw new Error('Failed to create action');
-      await fetchFolderState(selectedFolder, sanitizedName);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to create action' }));
+        throw new Error(error.message || 'Failed to create action');
+      }
+      await fetchFolderState(selectedFolder);
       setIsCreatingAction(false);
       setNewActionName('');
       toast.success('Action created successfully');
@@ -384,23 +360,28 @@ const PromptsManager: React.FC = () => {
   };
 
   const handleDeletePrompt = async () => {
-    if (!selectedFolder || !selectedPrompt) return;
+    if (!selectedFolder || !selectedPrompt) {
+      toast.error('No prompt selected');
+      return;
+    }
 
     try {
       startLoading();
-      const response = await fetch(`/api/v2/prompts?folder=${selectedFolder}&filename=${selectedPrompt.name}&action=${selectedAction}`, {
-        method: 'DELETE'
+      const response = await fetch(`/api/v2/prompts?folder=${selectedFolder}&filename=${selectedPrompt.name}`, {
+        method: 'DELETE',
       });
 
-      if (!response.ok) throw new Error('Failed to delete prompt');
-      await fetchFolderState(selectedFolder, selectedAction);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to delete prompt' }));
+        throw new Error(error.message || 'Failed to delete prompt');
+      }
+      await fetchFolderState(selectedFolder);
       setSelectedPrompt(null);
       setContent('');
-      setOriginalContent('');
       toast.success('Prompt deleted successfully');
-    } catch (err) {
-      console.error('Error deleting prompt:', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to delete prompt');
+    } catch (error) {
+      console.error('Error deleting prompt:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete prompt');
     } finally {
       stopLoading();
     }
@@ -419,76 +400,12 @@ const PromptsManager: React.FC = () => {
     setConfirmModal(false);
   };
 
-  const handleToggleActivePrompt = async (promptPath: string, type: 'system' | 'instruction') => {
-    if (!selectedFolder || !selectedAction) return;
-
-    try {
-      startLoading();
-      const response = await fetch(`/api/v2/prompts/config?nocachecode=${uuidv4()}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          folder: selectedFolder,
-          action: selectedAction,
-          updates: {
-            [type === 'system' ? 'activeSystemPrompt' : 'activeInstructionPrompt']: promptPath
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update active prompt');
-      }
-
-      await fetchFolderState(selectedFolder, selectedAction);
-    } catch (error) {
-      console.error('Error updating active prompt:', error);
-    } finally {
-      stopLoading();
-    }
-  };
-
-  const handleToggleRequiresBrowser = async (value: boolean) => {
-    if (!selectedFolder || !selectedAction) return;
-
-    try {
-      startLoading();
-      const response = await fetch(`/api/v2/prompts/config?nocachecode=${uuidv4()}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          folder: selectedFolder,
-          action: selectedAction,
-          updates: {
-            requires_browser: value
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update requires_browser setting');
-      }
-
-      await fetchFolderState(selectedFolder, selectedAction);
-    } catch (error) {
-      console.error('Error updating requires_browser:', error);
-      toast.error('Failed to update requires_browser setting');
-    } finally {
-      stopLoading();
-    }
-  };
-
   const handleScriptSelect = async (scriptName: string) => {
     window.open(`/scripteditor?scriptname=${scriptName}`, '_blank');
   };
 
   const currentFolder = folders.find(f => f.folder === selectedFolder);
-  const currentAction = currentFolder?.actions.find(a => a.name === selectedAction);
-  const currentPrompts = currentAction?.prompts || [];
+  const currentPrompts = currentFolder?.prompts || [];
 
   return (
     <AdminLayout>
@@ -561,52 +478,6 @@ const PromptsManager: React.FC = () => {
                     {selectedFolder && (
                       <>
                         <div>
-                          <div className="flex gap-3">
-                            <div className="relative flex-1">
-                              <select
-                                id="action-select"
-                                className="w-full px-3 py-1.5 text-base border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-300 focus:border-transparent bg-white appearance-none text-gray-900"
-                                value={selectedAction}
-                                onChange={(e) => handleActionSelect(e.target.value)}
-                              >
-                                <option value="" disabled className="text-gray-500">Select Action</option>
-                                {currentFolder?.actions.map((action) => (
-                                  <option key={`action-${action.name}`} value={action.name} className="text-gray-900">
-                                    {action.name}
-                                  </option>
-                                ))}
-                              </select>
-                              <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-                                <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                </svg>
-                              </div>
-                            </div>
-                            <button
-                              className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded focus:outline-none focus:ring-1 focus:ring-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                              onClick={handleNewAction}
-                              disabled={true}
-                              title="Add Action"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 mb-4">
-                          <label className="text-base font-medium text-gray-600">Requires Browser</label>
-                          <input
-                            type="checkbox"
-                            disabled={currentAction?.disable_browser_config}
-                            checked={currentAction?.requires_browser || false}
-                            onChange={(e) => handleToggleRequiresBrowser(e.target.checked)}
-                            className="w-4 h-4 text-gray-600 border-gray-300 rounded focus:ring-gray-500"
-                          />
-                        </div>
-
-                        <div>
                           <div className="flex items-center justify-between mb-1">
                             <label className="text-base font-medium text-gray-600">Prompts</label>
                             <button
@@ -660,63 +531,18 @@ const PromptsManager: React.FC = () => {
                         ) : null}
 
                         <div className="space-y-0.5">
-                          {currentPrompts.map((prompt) => {
-                            const isSystem = currentAction?.activeSystemPrompt === prompt.path;
-                            const isInstruction = currentAction?.activeInstructionPrompt === prompt.path;
-
-                            return (
-                              <div
-                                key={`prompt-${prompt.path}`}
-                                className={`px-2.5 py-1.5 text-base rounded cursor-pointer flex items-center justify-between group ${selectedPrompt?.path === prompt.path
-                                  ? 'bg-gray-100 border border-gray-200'
-                                  : 'hover:bg-gray-50 border border-transparent'
-                                  }`}
-                                onClick={() => handlePromptSelect(prompt)}
-                              >
-                                <span className={`${(isSystem || isInstruction) ? 'font-bold' : ''}`}>{prompt.name}</span>
-                                <div className="flex gap-1">
-                                  <button
-                                    className={`p-1 rounded-full ${isSystem
-                                      ? 'bg-green-100 text-green-600 cursor-default'
-                                      : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
-                                      }`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (!isSystem) {
-                                        handleToggleActivePrompt(prompt.path, 'system');
-                                      }
-                                    }}
-                                    disabled={isSystem}
-                                    title="Set as System Prompt"
-                                  >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-                                    </svg>
-                                    <span className="sr-only">Set as System Prompt</span>
-                                  </button>
-                                  <button
-                                    className={`p-1 rounded-full ${isInstruction
-                                      ? 'bg-green-100 text-green-600 cursor-default'
-                                      : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600'
-                                      }`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (!isInstruction) {
-                                        handleToggleActivePrompt(prompt.path, 'instruction');
-                                      }
-                                    }}
-                                    disabled={isInstruction}
-                                    title="Set as Instruction Prompt"
-                                  >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    <span className="sr-only">Set as Instruction Prompt</span>
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
+                          {currentPrompts.map((prompt) => (
+                            <div
+                              key={`prompt-${prompt.name}`}
+                              className={`px-2.5 py-1.5 text-base rounded cursor-pointer flex items-center justify-between group ${selectedPrompt?.name === prompt.name
+                                ? 'bg-gray-100 border border-gray-200'
+                                : 'hover:bg-gray-50 border border-transparent'
+                                }`}
+                              onClick={() => handlePromptSelect(prompt)}
+                            >
+                              <span className="truncate">{prompt.name}</span>
+                            </div>
+                          ))}
                         </div>
                       </>
                     )}
@@ -728,7 +554,7 @@ const PromptsManager: React.FC = () => {
                       <label className="font-medium text-gray-600 block mb-1">Active Scripts</label>
                       <textarea
                         readOnly
-                        value={currentAction?.prompt_scripts?.join('\n') || ''}
+                        value={currentFolder?.prompts.find(p => p.name === selectedAction)?.prompt_scripts?.join('\n') || ''}
                         className="w-full px-2.5 py-1.5 text-base border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-300 focus:border-transparent bg-gray-50 resize-none"
                         rows={3}
                       />

@@ -141,10 +141,14 @@ const FileList = forwardRef(({
           return (
             <div key={file.path}>
               <div
-                className={`px-6 py-3 hover:bg-gray-50 cursor-pointer flex items-center justify-between text-sm ${file.isDirectory ? 'bg-yellow-50 hover:bg-yellow-100' : ''
-                  }`}
+                className={`px-6 py-3 hover:bg-gray-50 cursor-pointer flex items-center justify-between text-sm ${file.isDirectory ? 'bg-yellow-50 hover:bg-yellow-100' : ''}`}
                 style={{ paddingLeft: `${level * 20 + 24}px` }}
-                onClick={() => {
+                onClick={(e) => {
+                  // Don't open if clicking on checkbox or action buttons
+                  if ((e.target as HTMLElement).closest('input[type="checkbox"]') || 
+                      (e.target as HTMLElement).closest('button')) {
+                    return;
+                  }
                   if (file.isDirectory) {
                     onFolderClick(file);
                   } else if (file.url) {
@@ -153,17 +157,18 @@ const FileList = forwardRef(({
                 }}
               >
                 <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 text-gray-600 border-gray-300 rounded focus:ring-gray-500"
+                    checked={checkedItems.has(file.path)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleCheckboxChange(file);
+                    }}
+                  />
                   {file.isDirectory ? (
                     <>
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 text-gray-600 border-gray-300 rounded focus:ring-gray-500"
-                        checked={checkedItems.has(file.path)}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          handleCheckboxChange(file);
-                        }}
-                      />
                       <ChevronRightIcon
                         className={`h-5 w-5 text-yellow-500 transform transition-transform ${isExpanded ? 'rotate-90' : ''}`}
                       />
@@ -203,20 +208,29 @@ const FileList = forwardRef(({
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); onDelete(file.path)}}
-                          className="text-gray-500 hover:text-purple-600 p-1"
+                          className="text-gray-500 hover:text-red-600 p-1"
                           title="Delete"
                         >
                           <TrashIcon className="h-4 w-4" />
                         </button>
                       </>
                     ) : (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onFileDownload(file.path)}}
-                        className="text-gray-500 hover:text-green-600 p-1"
-                        title="Download file"
-                      >
-                        <ArrowDownTrayIcon className="h-4 w-4" />
-                      </button>
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onFileDownload(file.path)}}
+                          className="text-gray-500 hover:text-green-600 p-1"
+                          title="Download file"
+                        >
+                          <ArrowDownTrayIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onDelete(file.path)}}
+                          className="text-gray-500 hover:text-red-600 p-1"
+                          title="Delete file"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

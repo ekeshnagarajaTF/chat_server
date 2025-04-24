@@ -1,12 +1,10 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { FileAccessManager } from '@/lib/file_access_manager';
 import path from 'path';
+import fs from 'fs';
 
 // Initialize FileAccessManager with environment variables
-const fileManager = new FileAccessManager(
-  process.env.DIRECTORY_BROWSING_PATH || '',
-  process.env.STATIC_FILE_BASE_URL || ''
-);
+const fileManager = new FileAccessManager(process.env.DIRECTORY_BROWSING_PATH || '');
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'GET') {
@@ -14,11 +12,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Validate environment variables
     if (!process.env.DIRECTORY_BROWSING_PATH) {
+      console.error('DIRECTORY_BROWSING_PATH is not configured');
       return res.status(500).json({ error: 'DIRECTORY_BROWSING_PATH is not configured' });
     }
     // if (!process.env.STATIC_FILE_BASE_URL) {
     //   return res.status(500).json({ error: 'STATIC_FILE_BASE_URL is not configured' });
     // }
+
+    // Check if directory exists and is accessible
+    try {
+      const baseDir = process.env.DIRECTORY_BROWSING_PATH;
+      console.log('Checking directory:', baseDir);
+      
+      if (!fs.existsSync(baseDir)) {
+        console.error('Directory does not exist:', baseDir);
+        return res.status(500).json({ error: `Directory does not exist: ${baseDir}` });
+      }
+
+      // Try to read the directory to check permissions
+      fs.readdirSync(baseDir);
+      console.log('Directory is accessible:', baseDir);
+    } catch (error: any) {
+      console.error('Directory access error:', error);
+      return res.status(500).json({ error: `Directory access error: ${error.message}` });
+    }
 
     try {
       if (download) {
@@ -35,6 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         res.send(zipBuffer);
       } else {
         // List directory contents
+        console.log('Listing directory:', filePath || 'root');
         const result = fileManager.listDirectory(filePath as string);
         return res.status(200).json(result);
       }
