@@ -4,6 +4,7 @@ import FileList from '../components/FileList';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { useLoading, withLoading } from '@/contexts/LoadingContext';
 import { v4 as uuidv4 } from 'uuid';
+import { toast } from 'react-hot-toast';
 
 interface FileItem {
   name: string;
@@ -22,6 +23,8 @@ const FileBrowser = () => {
   const [checkedCount, setCheckedCount] = useState(0);
   const fileListRef = useRef<any>(null);
   const { startLoading, stopLoading } = useLoading();
+  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+  const [fileContent, setFileContent] = useState<string>('');
   
   const fetchDirectory = async (path: string = '') => {
     return withLoading(async () => {
@@ -133,8 +136,8 @@ const FileBrowser = () => {
           onClick={() => {
             if (file.isDirectory) {
               handleFolderClick(file);
-            } else if (file.url) {
-              window.open(file.url, '_blank');
+            } else {
+              handleFileClick(file);
             }
           }}
         >
@@ -244,6 +247,28 @@ const FileBrowser = () => {
     }
   };
 
+  const handleFileClick = async (file: FileItem) => {
+    if (file.isDirectory) {
+      handleFolderClick(file);
+    } else {
+      try {
+        startLoading();
+        const response = await axios.get(`/api/files?path=${encodeURIComponent(file.path)}&content=true&nocachecode=${uuidv4()}`);
+        if (response.data.error) {
+          toast.error(response.data.error);
+          return;
+        }
+        setFileContent(response.data.content);
+        setSelectedFile(file);
+      } catch (error: any) {
+        console.error('Error loading file content:', error);
+        toast.error(error.response?.data?.error || 'Failed to load file content');
+      } finally {
+        stopLoading();
+      }
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       const data = await fetchDirectory();
@@ -325,7 +350,48 @@ const FileBrowser = () => {
               onDelete={handleDelete}
               expandedFolders={expandedFolders}
               onSelectionChange={setCheckedCount}
+              onFileClick={handleFileClick}
             />
+
+            {/* File Content Modal */}
+            {selectedFile && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 w-3/4 h-3/4 flex flex-col">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-semibold">{selectedFile.name}</h2>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => handleDownload(selectedFile.path)}
+                        className="text-gray-500 hover:text-blue-600 p-1"
+                        title="Download file"
+                      >
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedFile(null);
+                          setFileContent('');
+                        }}
+                        className="text-gray-500 hover:text-gray-700"
+                      >
+                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-auto bg-gray-50 p-4 rounded">
+                    {fileContent ? (
+                      <pre className="whitespace-pre-wrap font-mono text-sm">{fileContent}</pre>
+                    ) : (
+                      <div className="text-gray-500 text-center">No content available</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

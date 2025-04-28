@@ -34,6 +34,7 @@ interface FileListProps {
   onSelectAll?: () => void;
   onGetChecked?: () => FileItem[];
   onSelectionChange?: (count: number) => void;
+  onFileClick?: (file: FileItem) => void;
 }
 
 const FileList = forwardRef(({
@@ -46,7 +47,8 @@ const FileList = forwardRef(({
   level = 0,
   onSelectAll,
   onGetChecked,
-  onSelectionChange
+  onSelectionChange,
+  onFileClick
 }: FileListProps, ref) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -151,8 +153,8 @@ const FileList = forwardRef(({
                   }
                   if (file.isDirectory) {
                     onFolderClick(file);
-                  } else if (file.url) {
-                    window.open(file.url, '_blank');
+                  } else if (onFileClick) {
+                    onFileClick(file);
                   }
                 }}
               >
@@ -245,6 +247,7 @@ const FileList = forwardRef(({
                   onDelete={onDelete}
                   expandedFolders={expandedFolders}
                   level={level + 1}
+                  onFileClick={onFileClick}
                 />
               )}
             </div>

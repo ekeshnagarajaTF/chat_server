@@ -85,9 +85,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
                     // Get all YML files in the folder
                     const files = manager.getFilenames(folderPath) || [];
-                    const ymlFiles = files.filter(file => file.endsWith('.yml') || file.endsWith('.yaml'));
+                    const promptFiles = files.filter(file => file.endsWith('.yml') || file.endsWith('.yaml') || file.endsWith('.json'));
                     
-                    const prompts = ymlFiles.map(file => ({
+                    const prompts = promptFiles.map(file => ({
                         name: file,
                         path: file
                     }));
@@ -107,10 +107,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                         console.log('Processing folder:', folder, 'at path:', folderPath);
                         const files = manager.getFilenames(folderPath) || [];
                         console.log('Found files in folder:', folder, ':', files);
-                        const ymlFiles = files.filter(file => file.endsWith('.yml') || file.endsWith('.yaml'));
-                        console.log('Found YML files in folder:', folder, ':', ymlFiles);
+                        const promptFiles = files.filter(file => file.endsWith('.yml') || file.endsWith('.yaml') || file.endsWith('.json'));
+                        console.log('Found prompt files in folder:', folder, ':', promptFiles);
                         
-                        const prompts = ymlFiles.map(file => ({
+                        const prompts = promptFiles.map(file => ({
                             name: file,
                             path: `${folder}/${file}`
                         }));

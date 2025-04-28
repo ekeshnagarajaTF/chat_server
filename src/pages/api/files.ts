@@ -8,7 +8,7 @@ const fileManager = new FileAccessManager(process.env.DIRECTORY_BROWSING_PATH ||
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method === 'GET') {
-    const { path: filePath, download, zip } = req.query;
+    const { path: filePath, download, zip, content } = req.query;
 
     // Validate environment variables
     if (!process.env.DIRECTORY_BROWSING_PATH) {
@@ -32,14 +32,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Try to read the directory to check permissions
       fs.readdirSync(baseDir);
       console.log('Directory is accessible:', baseDir);
-    } catch (error: any) {
-      console.error('Directory access error:', error);
-      return res.status(500).json({ error: `Directory access error: ${error.message}` });
-    }
 
-    try {
+      // If content is requested, return the file content
+      if (content === 'true' && filePath) {
+        const fullPath = path.join(baseDir, filePath as string);
+        if (!fs.existsSync(fullPath)) {
+          return res.status(404).json({ error: 'File not found' });
+        }
+        const stats = fs.statSync(fullPath);
+        if (stats.isDirectory()) {
+          return res.status(400).json({ error: 'Cannot read content of a directory' });
+        }
+
+        // Check if it's a text file
+        const ext = path.extname(fullPath).toLowerCase();
+        const textExtensions = ['.txt', '.json', '.yml', '.yaml', '.md', '.js', '.ts', '.html', '.css', '.xml', '.csv', '.log'];
+        
+        if (textExtensions.includes(ext)) {
+          try {
+            const fileContent = fs.readFileSync(fullPath, 'utf8');
+            return res.status(200).json({ content: fileContent });
+          } catch (error) {
+            console.error('Error reading file:', error);
+            return res.status(500).json({ error: 'Failed to read file content' });
+          }
+        } else {
+          return res.status(400).json({ error: 'File type not supported for content preview' });
+        }
+      }
+
+      // If download is requested, stream the file
       if (download) {
-        // Download file
         const fileStream = fileManager.createReadStream(filePath as string);
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath as string)}"`);
